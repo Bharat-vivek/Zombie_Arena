@@ -2,6 +2,7 @@
 #include "Player.cpp"
 #include "CreateHorde.cpp"
 #include "Zombie.cpp"
+#include "Bullet.cpp"
 
 using namespace sf;
 
@@ -48,11 +49,35 @@ int main()
 	Texture textureBackground; 
 	textureBackground.loadFromFile("graphics/background_sheet.png");	
 	
-	//**********Prepare for a horde of zombies
+	//Prepare for a horde of zombies
 	int numZombies;
 	int numZombiesAlive;
 	Zombie* zombies = NULL;
-	//**********//
+	
+	//**********Bullets*****/
+	// 100 bullets should do
+	Bullet bullets[100];
+	int currentBullet = 0;
+	int bulletsSpare = 24; //24
+	int bulletsInClip = 6; //6
+	int clipSize = 6;
+	float fireRate = 10; //1
+	// When was the fire button last pressed?
+	Time lastPressed;
+
+	//********Use Crosshair in place of mouse pointer******/
+	// Hide the mouse pointer and replace it with crosshair
+	window.setMouseCursorVisible(true);
+	Sprite spriteCrosshair;
+	Texture textureCrosshair;
+	textureCrosshair.loadFromFile("graphics/crosshair.png");
+	spriteCrosshair.setTexture(textureCrosshair);
+	spriteCrosshair.setOrigin(25, 25);
+
+	//*******About the game
+	int score = 0;
+	int hiScore = 0;
+
 
 	// The main game loop
 	while (window.isOpen())
@@ -94,6 +119,26 @@ int main()
 
 				if (state == State::PLAYING)
 				{
+					// Reloading
+					if (event.key.code == Keyboard::R)
+					{
+						if (bulletsSpare >= clipSize)
+						{
+							// Plenty of bullets. Reload.
+							bulletsInClip = clipSize;
+							bulletsSpare -= clipSize;
+						}
+						else if (bulletsSpare > 0)
+						{
+							// Only few bullets left
+							bulletsInClip = bulletsSpare;
+							bulletsSpare = 0;
+						}
+						else
+						{
+							// More here soon!!!!
+						}
+					}
 				}
 
 			}
@@ -145,6 +190,34 @@ int main()
 			{
 				player.stopRight();
 			}
+
+			//**********Fire a bullet******/
+			if (sf::Mouse::isButtonPressed(sf::Mouse::Left))
+			{
+
+				if (gameTimeTotal.asMilliseconds()
+					- lastPressed.asMilliseconds()
+					> 1000 / fireRate && bulletsInClip > 0)
+				{
+
+					// Pass the centre of the player 
+					// and the centre of the cross-hair
+					// to the shoot function
+					bullets[currentBullet].shoot(
+						player.getCenter().x, player.getCenter().y,
+						mouseWorldPosition.x, mouseWorldPosition.y);
+
+					currentBullet++;
+					if (currentBullet > 99)
+					{
+						currentBullet = 0;
+					}
+					lastPressed = gameTimeTotal;
+
+					bulletsInClip--;
+				}
+
+			}// End fire a bullet
 
 		}// End WASD while playing
 
@@ -198,14 +271,13 @@ int main()
 				// Spawn the player in the middle of the arena
 				player.spawn(arena, resolution, tileSize);
 
-				//******Create a horde of zombies
-				   numZombies = 10;
+				//Create a horde of zombies
+				   numZombies = 4;
 
 				// Delete the previously allocated memory (if it exists)
 				   delete[] zombies;
 				   zombies = createHorde(numZombies, arena);
 				   numZombiesAlive = numZombies;
-				//*******//
 
 				// Reset the clock so there isn't a frame jump
 				clock.restart();
@@ -233,6 +305,10 @@ int main()
 			mouseWorldPosition = window.mapPixelToCoords(
 				Mouse::getPosition(), mainView);
 
+			//*******Set the crosshair to the //
+			//*******mouse world location****//
+			spriteCrosshair.setPosition(mouseWorldPosition);
+
 			// Update the player
 			player.update(dtAsSeconds, Mouse::getPosition());
 
@@ -242,7 +318,7 @@ int main()
 			// Make the view centre around the player				
 			mainView.setCenter(player.getCenter());
 
-			//*******Loop through each Zombie and update them
+			//Loop through each Zombie and update them
 			for (int i = 0; i < numZombies; i++)
 			{
 				if (zombies[i].isAlive())
@@ -250,9 +326,75 @@ int main()
 					zombies[i].update(dt.asSeconds(), playerPosition);
 				}
 			}
-			//*******//
+			
+			//********Update any bullets that are in-flight****/
+			for (int i = 0; i < 100; i++)
+			{
+				if (bullets[i].isInFlight())
+				{
+					bullets[i].update(dtAsSeconds);
+				}
+			}
 
-		}// End updating the scene
+			//*******Collision detection*****/
+			//*****Have any zombies been shot?****/
+			for (int i = 0; i < 100; i++)
+			{
+				for (int j = 0; j < numZombies; j++)
+				{
+					if (bullets[i].isInFlight() &&
+						zombies[j].isAlive())
+					{
+						if (bullets[i].getPosition().intersects
+							(zombies[j].getPosition()))
+						{
+							//*****Stop the bullet
+							bullets[i].stop();
+
+							//*******Register the hit and see if it was a kill
+							if (zombies[j].hit()) {
+								//*******Not just a hit but a kill too
+								score += 10;
+								if (score >= hiScore)
+								{
+									hiScore = score;
+								}
+
+								numZombiesAlive--;
+
+								//******When all the zombies are dead (again)
+								if (numZombiesAlive == 0) {
+									state = State::LEVELING_UP;
+								}
+							}
+
+						}
+					}
+
+				}
+			}//******End zombie being shot
+
+			 //******Have any zombies touched the player			
+			for (int i = 0; i < numZombies; i++)
+			{
+				if (player.getPosition().intersects
+					(zombies[i].getPosition()) && zombies[i].isAlive())
+				{
+
+					if (player.hit(gameTimeTotal))
+					{
+						// More here later
+					}
+
+					if (player.getHealth() <= 0)
+					{
+						state = State::GAME_OVER;
+
+					}
+				}
+			}//******End player touched
+
+		}//*******End updating the scene
 
 		 /*
 		 **************
@@ -271,15 +413,26 @@ int main()
 			// Draw the background
 			window.draw(background, &textureBackground);
 
-			//******Draw the zombies
+			//Draw the zombies
 			for (int i = 0; i < numZombies; i++)
 			{
 				window.draw(zombies[i].getSprite());
 			}
-			//******//
+			
+			//****** Draw bullets in flight *****/
+			for (int i = 0; i < 100; i++)
+			{
+				if (bullets[i].isInFlight())
+				{
+					window.draw(bullets[i].getShape());
+				}
+			}
 
 			// Draw the player
 			window.draw(player.getSprite());
+
+			//******* Draw the crosshair
+			window.draw(spriteCrosshair);
 		}
 
 		if (state == State::LEVELING_UP)
@@ -292,6 +445,7 @@ int main()
 
 		if (state == State::GAME_OVER)
 		{
+
 		}
 
 		window.display();
